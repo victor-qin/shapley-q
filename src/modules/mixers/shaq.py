@@ -66,12 +66,13 @@ class SHAQMixer(nn.Module):
                 [0., 0., 1.],
                 [1., 0., 0.]]]])
         """
-        seq_set = th.tril(th.ones(self.n_agents, self.n_agents).cuda(), diagonal=0, out=None)
-        grand_coalitions_pos = th.multinomial(th.ones(batch_size*self.sample_size, 
-                                          self.n_agents).cuda()/self.n_agents, 
-                                          self.n_agents, 
+        device = th.device("cuda" if th.cuda.is_available() else "cpu")
+        seq_set = th.tril(th.ones(self.n_agents, self.n_agents).to(device), diagonal=0, out=None)
+        grand_coalitions_pos = th.multinomial(th.ones(batch_size*self.sample_size,
+                                          self.n_agents).to(device)/self.n_agents,
+                                          self.n_agents,
                                           replacement=False)
-        individual_map = th.zeros(batch_size*self.sample_size*self.n_agents, self.n_agents).cuda()
+        individual_map = th.zeros(batch_size*self.sample_size*self.n_agents, self.n_agents).to(device)
         individual_map.scatter_(1, grand_coalitions_pos.contiguous().view(-1, 1), 1)
         individual_map = individual_map.contiguous().view(batch_size, self.sample_size, self.n_agents, self.n_agents)
         subcoalition_map = th.matmul(individual_map, seq_set)
@@ -85,17 +86,17 @@ class SHAQMixer(nn.Module):
         #         grand_coalition[pos] = agent
         #     grand_coalitions.append(grand_coalition)
         # grand_coalitions = th.stack(grand_coalitions, dim=0).to(self.device)
-        offset = (th.arange(batch_size*self.sample_size)*self.n_agents).reshape(-1, 1).cuda()
+        offset = (th.arange(batch_size*self.sample_size)*self.n_agents).reshape(-1, 1).to(device)
         grand_coalitions_pos_alter = grand_coalitions_pos + offset
-        grand_coalitions = th.zeros_like(grand_coalitions_pos_alter.flatten()).cuda()
-        grand_coalitions[grand_coalitions_pos_alter.flatten()] = th.arange(batch_size*self.sample_size*self.n_agents).cuda()
+        grand_coalitions = th.zeros_like(grand_coalitions_pos_alter.flatten()).to(device)
+        grand_coalitions[grand_coalitions_pos_alter.flatten()] = th.arange(batch_size*self.sample_size*self.n_agents).to(device)
         grand_coalitions = grand_coalitions.reshape(batch_size*self.sample_size, self.n_agents) - offset
 
-        grand_coalitions = grand_coalitions.unsqueeze(1).expand(batch_size*self.sample_size, 
-                                                                self.n_agents, 
-                                                                self.n_agents).contiguous().view(batch_size, 
-                                                                                                 self.sample_size, 
-                                                                                                 self.n_agents, 
+        grand_coalitions = grand_coalitions.unsqueeze(1).expand(batch_size*self.sample_size,
+                                                                self.n_agents,
+                                                                self.n_agents).contiguous().view(batch_size,
+                                                                                                 self.sample_size,
+                                                                                                 self.n_agents,
                                                                                                  self.n_agents) # shape = (b, n_s, n, n)
         return subcoalition_map, individual_map, grand_coalitions
 
@@ -107,25 +108,25 @@ class SHAQMixer(nn.Module):
         subcoalition_map, individual_map, grand_coalitions = self.sample_grandcoalitions(batch_size) # shape = (b, n_s, n, n)
 
         # reshape the grand coalition map for rearranging the sequence of actions of agents
-        grand_coalitions = grand_coalitions.unsqueeze(-1).expand(batch_size, 
-                                                                 self.sample_size, 
-                                                                 self.n_agents, 
-                                                                 self.n_agents, 
+        grand_coalitions = grand_coalitions.unsqueeze(-1).expand(batch_size,
+                                                                 self.sample_size,
+                                                                 self.n_agents,
+                                                                 self.n_agents,
                                                                  1) # shape = (b, n_s, n, n, 1)
 
         # remove agent i from the subcloation map
         subcoalition_map_no_i = subcoalition_map - individual_map
-        subcoalition_map_no_i = subcoalition_map_no_i.unsqueeze(-1).expand(batch_size, 
-                                                                 self.sample_size, 
-                                                                 self.n_agents, 
-                                                                 self.n_agents, 
+        subcoalition_map_no_i = subcoalition_map_no_i.unsqueeze(-1).expand(batch_size,
+                                                                 self.sample_size,
+                                                                 self.n_agents,
+                                                                 self.n_agents,
                                                                  1) # shape = (b, n_s, n, n, 1)
-        
+
         # reshape actions for further process on coalitions
-        reshape_agent_qs = agent_qs.unsqueeze(1).unsqueeze(2).expand(batch_size, 
-                                                        self.sample_size, 
-                                                        self.n_agents, 
-                                                        self.n_agents, 
+        reshape_agent_qs = agent_qs.unsqueeze(1).unsqueeze(2).expand(batch_size,
+                                                        self.sample_size,
+                                                        self.n_agents,
+                                                        self.n_agents,
                                                         1).gather(3, grand_coalitions) # shape = (b, n, 1) -> (b, 1, 1, n, 1) -> (b, n_s, n, n, 1)
 
         # get actions of its coalition memebers for each agent
